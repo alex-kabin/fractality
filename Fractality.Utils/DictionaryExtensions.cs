@@ -1,0 +1,20 @@
+using System.Collections.Generic;
+
+namespace Fractality.Utils
+{
+	public static class DictionaryExtensions
+	{
+		public static TV Get<TK, TV>(this IDictionary<TK, TV> dictionary, TK key)
+		{
+			return (TV)dictionary[key];
+		}
+
+		public static void AddOrSet<TK, TV>(this IDictionary<TK, TV> dictionary, TK key, TV value)
+		{
+			if (dictionary.ContainsKey(key))
+				dictionary[key] = value;
+			else
+				dictionary.Add(key, value);
+		}
+	}
+}

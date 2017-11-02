@@ -1,0 +1,120 @@
+﻿<Window x:Class="Fractality.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" 
+        xmlns:Fractality="clr-namespace:Fractality" 
+        xmlns:Windows="clr-namespace:Fractality.Windows;assembly=Fractality.Windows" 
+        xmlns:Controls="clr-namespace:Fractality.Controls" 
+        xmlns:Interactivity="clr-namespace:System.Windows.Interactivity;assembly=System.Windows.Interactivity" 
+        Title="{Binding AppTitle}" Height="600" Width="800" WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <Fractality:EmptyToVisibilityConverter x:Key="EmptyToVisConv" />
+        <BooleanToVisibilityConverter x:Key="BoolToVisConv" />
+        <Fractality:EqualityToBooleanConverter x:Key="EqToBoolConv" />
+    </Window.Resources>
+    <DockPanel LastChildFill="True">
+        <Menu DockPanel.Dock="Top" IsMainMenu="True">
+            <MenuItem Header="_File">
+                <MenuItem Header="Exit" Command="{Binding Controller.ExitCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_About">
+            </MenuItem>
+        </Menu>
+        <Grid Margin="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid Margin="5,5,5,0" Grid.Column="0" Grid.IsSharedSizeScope="True">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Labels" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Label Grid.Column="0" Content="Fractal:" FontWeight="Bold" />
+                            <ComboBox Grid.Column="1" Margin="4,0,0,0" ItemsSource="{Binding Fractals}" SelectedValue="{Binding SelectedFractal, Mode=OneWayToSource}" 
+                        SelectedValuePath="Value" DisplayMemberPath="Metadata.Name"/>
+                        </Grid>
+                        <Expander Header="Parameters" Margin="0,2,0,0" BorderBrush="Gray" BorderThickness="1" IsExpanded="True"
+                              Visibility="{Binding SelectedFractal, Converter={StaticResource EmptyToVisConv}}" >
+                            <Controls:ComponentSettingsControl Component="{Binding SelectedFractal, Mode=OneWay}" />
+                        </Expander>
+                        <Grid Margin="0,4,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Labels" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Label Grid.Column="0" Content="Painter:" FontWeight="Bold" />
+                            <ComboBox Grid.Column="1" Margin="4,0,0,0" ItemsSource="{Binding Painters}" SelectedValue="{Binding SelectedPainter, Mode=OneWayToSource}" 
+                      SelectedValuePath="Value" DisplayMemberPath="Metadata.Name"/>
+                        </Grid>
+                        <Expander Header="Parameters"  Margin="0,2,0,0" BorderBrush="Gray" BorderThickness="1" IsExpanded="True"
+                              Visibility="{Binding SelectedPainter, Converter={StaticResource EmptyToVisConv}}">
+                            <Controls:ComponentSettingsControl Component="{Binding SelectedPainter, Mode=OneWay}" />
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+                <GroupBox Grid.Row="1" Header="Settings">
+                    <Grid Margin="0,4,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Label Grid.Row="0" Grid.Column="0" Content="Cmin:" />
+                        <Controls:ComplexNumberEditor Grid.Row="0" Grid.Column="1" Margin="4,0,0,0" ComplexNumber="{Binding ElementName=fractalView, Path=Cmin, Mode=OneWay}" />
+                        <Label Grid.Row="1" Grid.Column="0" Content="Cmax:" />
+                        <Controls:ComplexNumberEditor Grid.Row="1" Grid.Column="1" Margin="4,0,0,0" ComplexNumber="{Binding ElementName=fractalView, Path=Cmax, Mode=OneWay}" />
+                        <Label Grid.Row="2" Grid.Column="0" Content="Iterations:" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Margin="4,0,0,0" Text="{Binding ElementName=fractalView, Path=MaxIterationsCount}" />
+                        <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                            <Button Margin="4,0,0,0" MinWidth="80" Content="Reset" IsEnabled="{Binding CanBuild}">
+                                <Interactivity:Interaction.Triggers>
+                                    <Interactivity:EventTrigger EventName="Click">
+                                        <Fractality:InvokeMethod TargetName="fractalView" MethodName="Reset"  />
+                                    </Interactivity:EventTrigger>
+                                </Interactivity:Interaction.Triggers>
+                            </Button>
+                            <Button Margin="4,0,0,0" MinWidth="80" Content="Refresh" IsEnabled="{Binding CanBuild}" IsDefault="True">
+                                <Interactivity:Interaction.Triggers>
+                                    <Interactivity:EventTrigger EventName="Click">
+                                        <Fractality:InvokeMethod TargetName="fractalView" MethodName="RefreshAsync"  />
+                                    </Interactivity:EventTrigger>
+                                </Interactivity:Interaction.Triggers>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </GroupBox>
+            </Grid>
+            <GridSplitter Grid.Column="0" Width="3" HorizontalAlignment="Right" VerticalAlignment="Stretch"/>
+            <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Windows:FractalViewControl Grid.Row="0" Margin="3" x:Name="fractalView"
+                                    Definition="{Binding SelectedFractal}"
+                                    Painter="{Binding SelectedPainter}" />
+                </Grid>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>
+
+    
