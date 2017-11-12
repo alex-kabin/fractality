@@ -1,9 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -14,10 +18,11 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 using Fractality.Core;
+using Stopwatch = Fractality.Core.Stopwatch;
 
 namespace Fractality.Windows
 {
-	public partial class FractalViewControl
+	public partial class FractalViewControl : INotifyPropertyChanged
 	{
 		#region Cmin property
 		public Complex Cmin
@@ -60,8 +65,32 @@ namespace Fractality.Windows
 
 		public bool IsInteractive { get; set; }
 
-		#region MaxIterationsCount property
-		public int MaxIterationsCount
+	    private int _progress = 0;
+	    public int Progress
+	    {
+	        get => _progress;
+	        private set
+	        {
+	            if (_progress != value) {
+	                _progress = value;
+	                OnPropertyChanged();
+	            }
+	        }
+	    }
+
+	    private double _time = 0.0;
+	    public double Time
+	    {
+	        get => _time;
+	        private set
+	        {
+                _time = value;
+                OnPropertyChanged();
+	        }
+	    }
+
+        #region MaxIterationsCount property
+        public int MaxIterationsCount
 		{
 			get { return (int)GetValue(MaxIterationsCountProperty); }
 			set { SetValue(MaxIterationsCountProperty, value); }
@@ -131,12 +160,23 @@ namespace Fractality.Windows
 		} 
 		#endregion
 
-		private bool IsBusy;
-		private bool _needExtentAdjustment;
+		private bool _isBusy;
+	    public bool IsBusy
+	    {
+	        get => _isBusy;
+	        private set
+	        {
+	            if (_isBusy != value) {
+	                _isBusy = value;
+                    OnPropertyChanged();
+	            }
+	        }
+	    }
+
+        private bool _needExtentAdjustment;
 
 		private readonly FractalBuilder _fractalBuilder;
-		private CancellationTokenSource _cancellationTokenSource;
-
+		
 		private WriteableBitmapImage _bitmap1;
 		private WriteableBitmapImage _bitmap2;
 
@@ -146,7 +186,11 @@ namespace Fractality.Windows
 			_fractalBuilder = new FractalBuilder();
 			ZoomFactor = 1.3;
 			IsInteractive = true;
+		    progressReporter = new Progress<int>(p => { Progress = p; });
+
 		}
+
+        private readonly Progress<int> progressReporter;
 
 		private Image BackImage
 		{
@@ -167,8 +211,9 @@ namespace Fractality.Windows
 		{
 			get { return image1.Visibility == Visibility.Visible ? _bitmap1 : _bitmap2; }
 		}
+        
 
-		private void AdjustBitmapSizeIfNecessary()
+	    private void AdjustBitmapSizeIfNecessary()
 		{
 			var imageWidth = (int)canvas.ActualWidth;
 			var imageHeight = (int)canvas.ActualHeight;
@@ -223,22 +268,63 @@ namespace Fractality.Windows
 		}
 
 		private int _level;
+	    private CancellationTokenSource _cancellationTokenSource = null;
+	    private Task _currentTask = null;
+	    private bool _refreshPending = false;
 
-		public void RefreshAsync()
+	    public void RefreshAsync()
+	    {
+	        AdjustBitmapSizeIfNecessary();
+	        AdjustExtentIfNecessary();
+
+	        if (_currentTask != null && _cancellationTokenSource != null) {
+	            if (!_cancellationTokenSource.IsCancellationRequested) {
+	                _cancellationTokenSource.Cancel();
+	                _refreshPending = true;
+	            }
+	            return;
+	        }
+
+	        _level = 0;
+	        _fractalBuilder.Image = BackBitmap;
+
+	        IsBusy = true;
+	        Progress = 0;
+	        Time = 0;
+
+	        var stopwatch = Stopwatch.Start();
+	        _cancellationTokenSource = new CancellationTokenSource();
+	        _currentTask = _fractalBuilder.BuildLevelAsync(Cmin, Cmax, _level, true, _cancellationTokenSource.Token, progressReporter);
+	        _currentTask.ContinueWith(t =>
+	                                  {
+	                                      if (t.IsCanceled) {
+	                                          Debug.WriteLine("draw canceled");
+	                                      }
+	                                      else if (t.IsFaulted) {
+	                                          Debug.WriteLine("draw failed");
+	                                      }
+	                                      else if (t.IsCompleted) {
+	                                          SwapImages();
+	                                          Time = stopwatch.Elapsed().TotalMilliseconds;
+	                                      }
+
+	                                      IsBusy = false;
+	                                      _currentTask = null;
+	                                      _cancellationTokenSource.Dispose();
+	                                      _cancellationTokenSource = null;
+
+	                                      if (_refreshPending) {
+	                                          _refreshPending = false;
+	                                          RefreshAsync();
+	                                      }
+	                                  },
+	                                  TaskScheduler.FromCurrentSynchronizationContext()
+	        );
+	    }
+
+	    private void OnLevelBuilt(Exception ex)
 		{
-			AdjustBitmapSizeIfNecessary();
-			AdjustExtentIfNecessary();
 			
-			IsBusy = true;
-			_level = 0;
-			_fractalBuilder.Image = BackBitmap;
-			_fractalBuilder.BuildLevelAsync(Cmin, Cmax, _level, true, CancellationToken.None,
-			                                OnLevelBuilt);
-		}
-
-		private void OnLevelBuilt(Exception ex)
-		{
-			SwapImages();
 			//if (!(ex is OperationCanceledException))
 			//{
 			//    if(_level == 4)
@@ -253,7 +339,7 @@ namespace Fractality.Windows
 			//        return;
 			//    }
 			//}
-			IsBusy = false;
+			
 		}
 
 		public void Reset()
@@ -345,5 +431,12 @@ namespace Fractality.Windows
 				}
 			}
 		}
+
+	    public event PropertyChangedEventHandler PropertyChanged;
+
+	    protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
+	    {
+	        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+	    }
 	}
 }

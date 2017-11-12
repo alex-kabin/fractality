@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Diagnostics.Contracts;
 using System.Linq;
 using System.Numerics;
@@ -18,8 +19,8 @@ namespace Fractality.Core
 		private int _maxIterationsCount = 20;
 		public int MaxIterationsCount
 		{
-			get { return _maxIterationsCount; }
-			set
+			get => _maxIterationsCount;
+		    set
 			{
 				Contract.Requires(value > 0);
 				_maxIterationsCount = value;
@@ -54,34 +55,38 @@ namespace Fractality.Core
 		{
 			Contract.Requires(blockSize > 0);
 
-			for (int y = area.YMin; y < area.YMax; y += blockSize)
-				for (int x = area.XMin; x < area.XMax; x += blockSize)
-				{
-					if (isFirstPass)
-						yield return new ImagePoint(x, y);
-					else
-					{
-						var bs = blockSize*2;
-						if ((x - area.XMin)%bs > 0 || (y-area.YMin)%bs > 0)
-							yield return new ImagePoint(x, y);
-					}
-				}
+		    if (isFirstPass)
+		    {
+		        for (int y = area.YMin; y < area.YMax; y += blockSize)
+		        for (int x = area.XMin; x < area.XMax; x += blockSize)
+		            yield return new ImagePoint(x, y);
+		    }
+		    else
+		    {
+		        var bs = blockSize * 2;
+                for (int y = area.YMin; y < area.YMax; y += blockSize)
+		        for (int x = area.XMin; x < area.XMax; x += blockSize)
+		        {
+		            if ((x - area.XMin) % bs > 0 || (y - area.YMin) % bs > 0)
+		                yield return new ImagePoint(x, y);
+		        }
+		    }
 		}
 
 		private void DrawPoint(ImagePoint point, CancellationToken cancellationToken, int blockSize = 1)
 		{
 			var color = CalculatePointColor(point, cancellationToken);
 
-			if(blockSize <= 1)
-				Image[point] = color;
-			else
-			{
-				int maxY = point.Y + blockSize;
-				int maxX = point.X + blockSize;
-				for (int y = point.Y; y < maxY && y < Image.Height; y++)
-					for (int x = point.X; x < maxX && x < Image.Width; x++)
-						Image[new ImagePoint(x, y)] = color;
-			}
+		    if (blockSize <= 1)
+		        Image[point] = color;
+		    else
+		    {
+		        int maxY = point.Y + blockSize;
+		        int maxX = point.X + blockSize;
+		        for (int y = point.Y; y < maxY && y < Image.Height; y++)
+		        for (int x = point.X; x < maxX && x < Image.Width; x++)
+		            Image[new ImagePoint(x, y)] = color;
+		    }
 		}
 
 		protected virtual ImageColor CalculatePointColor(ImagePoint point, CancellationToken cancellationToken)
@@ -96,16 +101,15 @@ namespace Fractality.Core
 
 			Painter.OnInit(pointContext);
 
-			ComplexVector temp;
 			do
 			{
 				cancellationToken.ThrowIfCancellationRequested();
 
-				temp = new ComplexVector(pointContext.Z);
+				var cv = new ComplexVector(pointContext.Z);
 				Fractal.Iterate(pointContext);
 
 				for (int i = 0; i < vectorSize; i++)
-					pointContext.DZ[i] = pointContext.Z[i] - temp[i];
+					pointContext.DZ[i] = pointContext.Z[i] - cv[i];
 				
 				pointContext.N += 1;
 
@@ -169,65 +173,71 @@ namespace Fractality.Core
 		#endregion // Build
 
 		#region BuildAsync
-		public void BuildAsync(Complex cmin, Complex cmax, CancellationToken cancellationToken, Action<Exception> callback)
+		public Task BuildAsync(Complex cmin, Complex cmax, CancellationToken cancellationToken, IProgress<int> progress)
 		{
-			BuildLevelAsync(cmin, cmax, 0, true, cancellationToken, callback);
+			return BuildLevelAsync(cmin, cmax, 0, true, cancellationToken, progress);
 		}
 
-		public void BuildLevelAsync(Complex cmin, Complex cmax, int level, bool isFirstPass, CancellationToken cancellationToken, Action<Exception> callback)
+		public Task BuildLevelAsync(Complex cmin, Complex cmax, int level, bool isFirstPass, CancellationToken cancellationToken, IProgress<int> progress)
 		{
-			BuildLevelAreaAsync(cmin, cmax, new ImageArea(0, 0, Image.Width, Image.Height), level, isFirstPass, cancellationToken,
-			                    callback);
+			return BuildLevelAreaAsync(cmin, cmax, new ImageArea(0, 0, Image.Width, Image.Height), level, isFirstPass, cancellationToken, progress);
 		}
 
-		public void BuildAreaAsync(Complex cmin, Complex cmax, ImageArea area, CancellationToken cancellationToken, Action<Exception> callback)
+		public Task BuildAreaAsync(Complex cmin, Complex cmax, ImageArea area, CancellationToken cancellationToken, IProgress<int> progress)
 		{
-			BuildLevelAreaAsync(cmin, cmax, area, 0, true, cancellationToken, callback);
+			return BuildLevelAreaAsync(cmin, cmax, area, 0, true, cancellationToken, progress);
 		}
 
-		public void BuildLevelAreaAsync(Complex cmin, Complex cmax, ImageArea area, int level, bool isFirstPass, CancellationToken cancellationToken, Action<Exception> callback)
-		{
-			Contract.Requires(level >= 0);
+	    public Task BuildLevelAreaAsync(
+	        Complex cmin, Complex cmax, ImageArea area, int level, bool isFirstPass,
+	        CancellationToken cancellationToken, IProgress<int> progress)
+	    {
+	        Contract.Requires(level >= 0);
 
-			Initialize(cmin, cmax);
+	        Initialize(cmin, cmax);
+	        int blockSize = 1 << level;
+	        IImage image = Image;
+	        int total = image.Width * image.Height / blockSize;
 
-			var asyncOperation = AsyncOperationManager.CreateOperation(null);
+            image.Lock();
+	        return Task.Run(() =>
+	                        {
+	                            int done = 0;
+	                            int percent = 0;
+	                            Parallel.ForEach(
+	                                EnumerateAreaBlocks(area, blockSize, isFirstPass),
+	                                new ParallelOptions {
+	                                    MaxDegreeOfParallelism = Environment.ProcessorCount,
+	                                    CancellationToken = cancellationToken
+	                                },
+	                                point =>
+	                                {
+                                        DrawPoint(point, cancellationToken, blockSize);
+	                                    var c = Interlocked.Increment(ref done);
+	                                    var pc = (int)(c * 100.0 / total);
+	                                    if (pc > 0) {
+	                                        if (Interlocked.CompareExchange(ref percent, pc, pc - 1) == pc - 1) {
+	                                            progress?.Report(pc);
+	                                        }
+	                                    }
+	                                });
+	                        },
+	                        cancellationToken
+	        ).ContinueWith(_ =>
+	                       {
+	                           image.Unlock();
+	                       },
+	                       CancellationToken.None,
+	                       TaskContinuationOptions.None,
+	                       TaskScheduler.FromCurrentSynchronizationContext()
+	        ).ContinueWith(_ => { },
+	                       cancellationToken,
+	                       TaskContinuationOptions.ExecuteSynchronously |
+	                       TaskContinuationOptions.LazyCancellation,
+	                       TaskScheduler.FromCurrentSynchronizationContext()
+	        );
+	    }
 
-			int blockSize = 1 << level;
-			Action action = delegate
-			                	{
-			                		Parallel.ForEach(EnumerateAreaBlocks(area, blockSize, isFirstPass),
-			                		                 new ParallelOptions
-			                		                 	{
-			                		                 		MaxDegreeOfParallelism = Environment.ProcessorCount,
-			                		                 		CancellationToken = cancellationToken
-			                		                 	},
-			                		                 point => DrawPoint(point, cancellationToken, blockSize));
-			                	};
-
-			Image.Lock();
-			action.BeginInvoke(delegate(IAsyncResult result)
-			                   	{
-			                   		Exception exception = null;
-			                   		try
-			                   		{
-			                   			action.EndInvoke(result);
-			                   		}
-			                   		catch (Exception ex)
-			                   		{
-			                   			exception = ex;
-			                   		}
-
-			                   		asyncOperation.PostOperationCompleted(
-			                   			delegate
-			                   				{
-			                   					Image.Unlock();
-			                   					callback(exception);
-			                   				},
-			                   			null);
-			                   	},
-			                   null);
-		}
-		#endregion // BuildAsync
+	    #endregion // BuildAsync
 	}
 }
